@@ -24,6 +24,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3001",
   "https://sailex-furniture-frontend-tau.vercel.app",
+  "https://sailex-furniture-admin.vercel.app/",
   "https://www.sailexfurniture.com",
 ];
 
