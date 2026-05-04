@@ -26,6 +26,7 @@ const allowedOrigins = [
   "https://sailex-furniture-frontend-tau.vercel.app",
   "https://sailex-furniture-admin.vercel.app/",
   "https://www.sailexfurniture.com",
+  "https://admin.sailexfurniture.com/",
 ];
 
 app.use(
