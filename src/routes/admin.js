@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import { query } from '../config/database.js';
-import { authenticate, requireAdmin } from '../middlewares/auth.js';
-import bcrypt from 'bcrypt';
+import { Router } from "express";
+import { query } from "../config/database.js";
+import { authenticate, requireAdmin } from "../middlewares/auth.js";
+import bcrypt from "bcrypt";
 
 const router = Router();
 
@@ -9,16 +9,16 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 // Dashboard stats
-router.get('/dashboard', async (req, res) => {
+router.get("/dashboard", async (req, res) => {
   try {
     // Total revenue
     const revenueResult = await query(
-      `SELECT COALESCE(SUM(total), 0) as total_revenue FROM orders WHERE payment_status = 'paid'`
+      `SELECT COALESCE(SUM(total), 0) as total_revenue FROM orders WHERE payment_status = 'paid'`,
     );
 
     // Orders count by status
     const ordersResult = await query(
-      `SELECT status, COUNT(*) as count FROM orders GROUP BY status`
+      `SELECT status, COUNT(*) as count FROM orders GROUP BY status`,
     );
 
     // Total products and low stock
@@ -26,12 +26,12 @@ router.get('/dashboard', async (req, res) => {
       `SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN stock_quantity < 5 THEN 1 ELSE 0 END) as low_stock
-       FROM products WHERE status = 'active'`
+       FROM products WHERE status = 'active'`,
     );
 
     // Total customers
     const customersResult = await query(
-      `SELECT COUNT(*) as total FROM users WHERE role = 'customer'`
+      `SELECT COUNT(*) as total FROM users WHERE role = 'customer'`,
     );
 
     // Recent orders
@@ -40,7 +40,7 @@ router.get('/dashboard', async (req, res) => {
         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
        FROM orders o
        ORDER BY o.created_at DESC
-       LIMIT 5`
+       LIMIT 5`,
     );
 
     // Revenue by day (last 7 days)
@@ -53,7 +53,7 @@ router.get('/dashboard', async (req, res) => {
        WHERE payment_status = 'paid' 
          AND created_at >= NOW() - INTERVAL '7 days'
        GROUP BY DATE(created_at)
-       ORDER BY date`
+       ORDER BY date`,
     );
 
     // Top selling products
@@ -65,7 +65,16 @@ router.get('/dashboard', async (req, res) => {
        WHERE o.payment_status = 'paid'
        GROUP BY p.id, p.name, p.slug, p.images
        ORDER BY total_sold DESC
-       LIMIT 5`
+       LIMIT 5`,
+    );
+
+    // Low stock products
+    const lowStockResult = await query(
+      `SELECT id, name, slug, stock_quantity as stock
+       FROM products
+       WHERE stock_quantity <= 5 AND status = 'active'
+       ORDER BY stock_quantity ASC
+       LIMIT 5`,
     );
 
     res.json({
@@ -83,20 +92,21 @@ router.get('/dashboard', async (req, res) => {
       recentOrders: recentOrdersResult.rows,
       revenueByDay: revenueByDayResult.rows,
       topProducts: topProductsResult.rows,
+      lowStockProducts: lowStockResult.rows,
     });
   } catch (error) {
-    console.error('Dashboard error:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+    console.error("Dashboard error:", error);
+    res.status(500).json({ error: "Failed to fetch dashboard data" });
   }
 });
 
 // Products CRUD
-router.get('/products', async (req, res) => {
+router.get("/products", async (req, res) => {
   try {
     const { page = 1, limit = 20, status, search } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const params = [];
-    let whereClause = 'WHERE 1=1';
+    let whereClause = "WHERE 1=1";
     let paramIndex = 1;
 
     if (status) {
@@ -113,7 +123,7 @@ router.get('/products', async (req, res) => {
 
     const countResult = await query(
       `SELECT COUNT(*) FROM products p ${whereClause}`,
-      params
+      params,
     );
 
     const productsResult = await query(
@@ -123,7 +133,7 @@ router.get('/products', async (req, res) => {
        ${whereClause}
        ORDER BY p.created_at DESC
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, parseInt(limit), offset]
+      [...params, parseInt(limit), offset],
     );
 
     res.json({
@@ -132,24 +142,61 @@ router.get('/products', async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total: parseInt(countResult.rows[0].count),
-        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit)),
+        totalPages: Math.ceil(
+          parseInt(countResult.rows[0].count) / parseInt(limit),
+        ),
       },
     });
   } catch (error) {
-    console.error('Get products error:', error);
-    res.status(500).json({ error: 'Failed to fetch products' });
+    console.error("Get products error:", error);
+    res.status(500).json({ error: "Failed to fetch products" });
   }
 });
 
-router.post('/products', async (req, res) => {
+router.get("/products/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await query(
+      `SELECT p.*, c.name as category_name
+       FROM products p
+       LEFT JOIN categories c ON p.category_id = c.id
+       WHERE p.id = $1`,
+      [id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json({ product: result.rows[0] });
+  } catch (error) {
+    console.error("Get product error:", error);
+    res.status(500).json({ error: "Failed to fetch product" });
+  }
+});
+
+router.post("/products", async (req, res) => {
   try {
     const {
-      name, slug, description, price, compareAtPrice, sku,
-      stockQuantity, categoryId, images, specifications, featured, status
+      name,
+      slug,
+      description,
+      price,
+      compareAtPrice,
+      sku,
+      stockQuantity,
+      categoryId,
+      images,
+      specifications,
+      featured,
+      status,
     } = req.body;
 
     if (!name || !slug || !price) {
-      return res.status(400).json({ error: 'Name, slug, and price are required' });
+      return res
+        .status(400)
+        .json({ error: "Name, slug, and price are required" });
     }
 
     const result = await query(
@@ -159,28 +206,49 @@ router.post('/products', async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *`,
       [
-        name, slug, description || null, price, compareAtPrice || null, sku || null,
-        stockQuantity || 0, categoryId || null, JSON.stringify(images || []),
-        JSON.stringify(specifications || {}), featured || false, status || 'draft'
-      ]
+        name,
+        slug,
+        description || null,
+        price,
+        compareAtPrice || null,
+        sku || null,
+        stockQuantity || 0,
+        categoryId || null,
+        JSON.stringify(images || []),
+        JSON.stringify(specifications || {}),
+        featured || false,
+        status || "active",
+      ],
     );
 
     res.status(201).json({ product: result.rows[0] });
   } catch (error) {
-    console.error('Create product error:', error);
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'Product with this slug or SKU already exists' });
+    console.error("Create product error:", error);
+    if (error.code === "23505") {
+      return res
+        .status(400)
+        .json({ error: "Product with this slug or SKU already exists" });
     }
-    res.status(500).json({ error: 'Failed to create product' });
+    res.status(500).json({ error: "Failed to create product" });
   }
 });
 
-router.put('/products/:id', async (req, res) => {
+router.put("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      name, slug, description, price, compareAtPrice, sku,
-      stockQuantity, categoryId, images, specifications, featured, status
+      name,
+      slug,
+      description,
+      price,
+      compareAtPrice,
+      sku,
+      stockQuantity,
+      categoryId,
+      images,
+      specifications,
+      featured,
+      status,
     } = req.body;
 
     const result = await query(
@@ -200,46 +268,66 @@ router.put('/products/:id', async (req, res) => {
        WHERE id = $13
        RETURNING *`,
       [
-        name, slug, description, price, compareAtPrice, sku,
-        stockQuantity, categoryId, images ? JSON.stringify(images) : null,
-        specifications ? JSON.stringify(specifications) : null, featured, status, id
-      ]
+        name,
+        slug,
+        description,
+        price,
+        compareAtPrice,
+        sku,
+        stockQuantity,
+        categoryId,
+        images ? JSON.stringify(images) : null,
+        specifications ? JSON.stringify(specifications) : null,
+        featured,
+        status,
+        id,
+      ],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ error: "Product not found" });
     }
 
     res.json({ product: result.rows[0] });
   } catch (error) {
-    console.error('Update product error:', error);
-    res.status(500).json({ error: 'Failed to update product' });
+    console.error("Update product error:", error);
+    res.status(500).json({ error: "Failed to update product" });
   }
 });
 
-router.delete('/products/:id', async (req, res) => {
+router.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Soft delete by setting status to archived
-    const result = await query(
-      `UPDATE products SET status = 'archived' WHERE id = $1 RETURNING id`,
-      [id]
-    );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+    // First check if product exists
+    const checkResult = await query("SELECT id FROM products WHERE id = $1", [
+      id,
+    ]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
     }
 
-    res.json({ message: 'Product archived successfully' });
+    // Delete related order_items first (or set product_id to null)
+    await query("DELETE FROM order_items WHERE product_id = $1", [id]);
+
+    // Delete related cart_items
+    await query("DELETE FROM cart_items WHERE product_id = $1", [id]);
+
+    // Delete related reviews
+    await query("DELETE FROM reviews WHERE product_id = $1", [id]);
+
+    // Hard delete the product
+    await query("DELETE FROM products WHERE id = $1", [id]);
+
+    res.json({ message: "Product deleted successfully" });
   } catch (error) {
-    console.error('Delete product error:', error);
-    res.status(500).json({ error: 'Failed to delete product' });
+    console.error("Delete product error:", error);
+    res.status(500).json({ error: "Failed to delete product" });
   }
 });
 
 // Categories CRUD
-router.get('/categories', async (req, res) => {
+router.get("/categories", async (req, res) => {
   try {
     const result = await query(
       `SELECT c.*, 
@@ -247,42 +335,51 @@ router.get('/categories', async (req, res) => {
         (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id) as product_count
        FROM categories c
        LEFT JOIN categories pc ON c.parent_id = pc.id
-       ORDER BY c.sort_order, c.name`
+       ORDER BY c.sort_order, c.name`,
     );
 
     res.json({ categories: result.rows });
   } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({ error: 'Failed to fetch categories' });
+    console.error("Get categories error:", error);
+    res.status(500).json({ error: "Failed to fetch categories" });
   }
 });
 
-router.post('/categories', async (req, res) => {
+router.post("/categories", async (req, res) => {
   try {
     const { name, slug, description, imageUrl, parentId, sortOrder } = req.body;
 
     if (!name || !slug) {
-      return res.status(400).json({ error: 'Name and slug are required' });
+      return res.status(400).json({ error: "Name and slug are required" });
     }
 
     const result = await query(
       `INSERT INTO categories (name, slug, description, image_url, parent_id, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [name, slug, description || null, imageUrl || null, parentId || null, sortOrder || 0]
+      [
+        name,
+        slug,
+        description || null,
+        imageUrl || null,
+        parentId || null,
+        sortOrder || 0,
+      ],
     );
 
     res.status(201).json({ category: result.rows[0] });
   } catch (error) {
-    console.error('Create category error:', error);
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'Category with this slug already exists' });
+    console.error("Create category error:", error);
+    if (error.code === "23505") {
+      return res
+        .status(400)
+        .json({ error: "Category with this slug already exists" });
     }
-    res.status(500).json({ error: 'Failed to create category' });
+    res.status(500).json({ error: "Failed to create category" });
   }
 });
 
-router.put('/categories/:id', async (req, res) => {
+router.put("/categories/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { name, slug, description, imageUrl, parentId, sortOrder } = req.body;
@@ -297,50 +394,52 @@ router.put('/categories/:id', async (req, res) => {
         sort_order = COALESCE($6, sort_order)
        WHERE id = $7
        RETURNING *`,
-      [name, slug, description, imageUrl, parentId, sortOrder, id]
+      [name, slug, description, imageUrl, parentId, sortOrder, id],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
+      return res.status(404).json({ error: "Category not found" });
     }
 
     res.json({ category: result.rows[0] });
   } catch (error) {
-    console.error('Update category error:', error);
-    res.status(500).json({ error: 'Failed to update category' });
+    console.error("Update category error:", error);
+    res.status(500).json({ error: "Failed to update category" });
   }
 });
 
-router.delete('/categories/:id', async (req, res) => {
+router.delete("/categories/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Check for products in category
     const productsCheck = await query(
-      'SELECT COUNT(*) FROM products WHERE category_id = $1',
-      [id]
+      "SELECT COUNT(*) FROM products WHERE category_id = $1",
+      [id],
     );
 
     if (parseInt(productsCheck.rows[0].count) > 0) {
-      return res.status(400).json({ error: 'Cannot delete category with products' });
+      return res
+        .status(400)
+        .json({ error: "Cannot delete category with products" });
     }
 
-    await query('DELETE FROM categories WHERE id = $1', [id]);
+    await query("DELETE FROM categories WHERE id = $1", [id]);
 
-    res.json({ message: 'Category deleted successfully' });
+    res.json({ message: "Category deleted successfully" });
   } catch (error) {
-    console.error('Delete category error:', error);
-    res.status(500).json({ error: 'Failed to delete category' });
+    console.error("Delete category error:", error);
+    res.status(500).json({ error: "Failed to delete category" });
   }
 });
 
 // Orders management
-router.get('/orders', async (req, res) => {
+router.get("/orders", async (req, res) => {
   try {
     const { page = 1, limit = 20, status, paymentStatus, search } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const params = [];
-    let whereClause = 'WHERE 1=1';
+    let whereClause = "WHERE 1=1";
     let paramIndex = 1;
 
     if (status) {
@@ -363,7 +462,7 @@ router.get('/orders', async (req, res) => {
 
     const countResult = await query(
       `SELECT COUNT(*) FROM orders o ${whereClause}`,
-      params
+      params,
     );
 
     const ordersResult = await query(
@@ -375,7 +474,7 @@ router.get('/orders', async (req, res) => {
        ${whereClause}
        ORDER BY o.created_at DESC
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, parseInt(limit), offset]
+      [...params, parseInt(limit), offset],
     );
 
     res.json({
@@ -384,16 +483,18 @@ router.get('/orders', async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total: parseInt(countResult.rows[0].count),
-        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit)),
+        totalPages: Math.ceil(
+          parseInt(countResult.rows[0].count) / parseInt(limit),
+        ),
       },
     });
   } catch (error) {
-    console.error('Get orders error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
+    console.error("Get orders error:", error);
+    res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
-router.get('/orders/:id', async (req, res) => {
+router.get("/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -402,11 +503,11 @@ router.get('/orders/:id', async (req, res) => {
        FROM orders o
        LEFT JOIN users u ON o.user_id = u.id
        WHERE o.id = $1`,
-      [id]
+      [id],
     );
 
     if (orderResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: "Order not found" });
     }
 
     const itemsResult = await query(
@@ -414,12 +515,12 @@ router.get('/orders/:id', async (req, res) => {
        FROM order_items oi
        LEFT JOIN products p ON oi.product_id = p.id
        WHERE oi.order_id = $1`,
-      [id]
+      [id],
     );
 
     const paymentsResult = await query(
-      'SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at DESC',
-      [id]
+      "SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at DESC",
+      [id],
     );
 
     res.json({
@@ -430,39 +531,46 @@ router.get('/orders/:id', async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get order error:', error);
-    res.status(500).json({ error: 'Failed to fetch order' });
+    console.error("Get order error:", error);
+    res.status(500).json({ error: "Failed to fetch order" });
   }
 });
 
-router.put('/orders/:id/status', async (req, res) => {
+router.put("/orders/:id/status", async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+    const validStatuses = [
+      "pending",
+      "confirmed",
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+      return res.status(400).json({ error: "Invalid status" });
     }
 
     const result = await query(
-      'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-      [status, id]
+      "UPDATE orders SET status = $1 WHERE id = $2 RETURNING *",
+      [status, id],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: "Order not found" });
     }
 
     res.json({ order: result.rows[0] });
   } catch (error) {
-    console.error('Update order status error:', error);
-    res.status(500).json({ error: 'Failed to update order status' });
+    console.error("Update order status error:", error);
+    res.status(500).json({ error: "Failed to update order status" });
   }
 });
 
 // Customers management
-router.get('/customers', async (req, res) => {
+router.get("/customers", async (req, res) => {
   try {
     const { page = 1, limit = 20, search } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -478,7 +586,7 @@ router.get('/customers', async (req, res) => {
 
     const countResult = await query(
       `SELECT COUNT(*) FROM users ${whereClause}`,
-      params
+      params,
     );
 
     const customersResult = await query(
@@ -489,7 +597,7 @@ router.get('/customers', async (req, res) => {
        ${whereClause}
        ORDER BY u.created_at DESC
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, parseInt(limit), offset]
+      [...params, parseInt(limit), offset],
     );
 
     res.json({
@@ -498,61 +606,65 @@ router.get('/customers', async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total: parseInt(countResult.rows[0].count),
-        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit)),
+        totalPages: Math.ceil(
+          parseInt(countResult.rows[0].count) / parseInt(limit),
+        ),
       },
     });
   } catch (error) {
-    console.error('Get customers error:', error);
-    res.status(500).json({ error: 'Failed to fetch customers' });
+    console.error("Get customers error:", error);
+    res.status(500).json({ error: "Failed to fetch customers" });
   }
 });
 
 // Inventory
-router.get('/inventory', async (req, res) => {
+router.get("/inventory", async (req, res) => {
   try {
     const { lowStock } = req.query;
 
     let whereClause = "WHERE status = 'active'";
-    if (lowStock === 'true') {
-      whereClause += ' AND stock_quantity < 10';
+    if (lowStock === "true") {
+      whereClause += " AND stock_quantity < 10";
     }
 
     const result = await query(
       `SELECT id, name, slug, sku, stock_quantity, images
        FROM products
        ${whereClause}
-       ORDER BY stock_quantity ASC`
+       ORDER BY stock_quantity ASC`,
     );
 
     res.json({ products: result.rows });
   } catch (error) {
-    console.error('Get inventory error:', error);
-    res.status(500).json({ error: 'Failed to fetch inventory' });
+    console.error("Get inventory error:", error);
+    res.status(500).json({ error: "Failed to fetch inventory" });
   }
 });
 
-router.put('/inventory/:id', async (req, res) => {
+router.put("/inventory/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { stockQuantity } = req.body;
 
     if (stockQuantity === undefined || stockQuantity < 0) {
-      return res.status(400).json({ error: 'Valid stock quantity is required' });
+      return res
+        .status(400)
+        .json({ error: "Valid stock quantity is required" });
     }
 
     const result = await query(
-      'UPDATE products SET stock_quantity = $1 WHERE id = $2 RETURNING id, name, stock_quantity',
-      [stockQuantity, id]
+      "UPDATE products SET stock_quantity = $1 WHERE id = $2 RETURNING id, name, stock_quantity",
+      [stockQuantity, id],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ error: "Product not found" });
     }
 
     res.json({ product: result.rows[0] });
   } catch (error) {
-    console.error('Update inventory error:', error);
-    res.status(500).json({ error: 'Failed to update inventory' });
+    console.error("Update inventory error:", error);
+    res.status(500).json({ error: "Failed to update inventory" });
   }
 });
 
