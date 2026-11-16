@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import { checkDatabaseConnection, query } from "./config/database.js";
 import authRoutes from "./routes/auth.js";
 import productsRoutes from "./routes/products.js";
 import categoriesRoutes from "./routes/categories.js";
@@ -65,8 +66,21 @@ app.use("/api/orders", ordersRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/admin", adminRoutes);
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/api/health", async (req, res) => {
+  try {
+    await query("SELECT 1");
+    res.json({
+      status: "ok",
+      database: "connected",
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.status(503).json({
+      status: "degraded",
+      database: "disconnected",
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 // Error handling
@@ -84,6 +98,7 @@ app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  await checkDatabaseConnection();
 });
