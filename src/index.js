@@ -4,9 +4,10 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import { checkDatabaseConnection, query } from "./config/database.js";
+import { startOrderExpiryJob } from "./jobs/expire-orders.js";
 import authRoutes from "./routes/auth.js";
 import productsRoutes from "./routes/products.js";
-import categoriesRoutes from "./routes/categories.js";
+// import categoriesRoutes from "./routes/categories.js";
 import cartRoutes from "./routes/cart.js";
 import ordersRoutes from "./routes/orders.js";
 import paymentsRoutes from "./routes/payments.js";
@@ -14,6 +15,11 @@ import adminRoutes from "./routes/admin.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Behind Render's proxy every request would otherwise appear to come from the
+// proxy's address, so one person's failed logins would lock out everyone.
+// Set to 2 if you also put Cloudflare in front.
+app.set("trust proxy", 1);
 
 // Security + logging
 app.use(helmet());
@@ -43,7 +49,7 @@ app.use(
   }),
 );
 
-// Stripe webhook
+// Stripe webhook (needs the raw body, so it must come before express.json)
 app.use(
   "/api/payments/stripe/webhook",
   express.raw({ type: "application/json" }),
@@ -60,7 +66,7 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productsRoutes);
-app.use("/api/categories", categoriesRoutes);
+// app.use("/api/categories", categoriesRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/payments", paymentsRoutes);
@@ -100,5 +106,6 @@ app.use((req, res) => {
 
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
-  await checkDatabaseConnection();
+  const connected = await checkDatabaseConnection();
+  if (connected) startOrderExpiryJob();
 });

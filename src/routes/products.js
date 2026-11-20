@@ -1,5 +1,5 @@
-import { Router } from "express";
-import { query } from "../config/database.js";
+import { Router } from 'express';
+import { query } from '../config/database.js';
 
 const router = Router();
 
@@ -9,7 +9,7 @@ const MAX_SEARCH_TERMS = 5;
 
 /* ------------------------------- helpers ------------------------------- */
 
-const asString = (value) => (typeof value === "string" ? value : "");
+const asString = (value) => (typeof value === 'string' ? value : '');
 
 const asPositiveInt = (value, fallback, max = Number.MAX_SAFE_INTEGER) => {
   const n = Number.parseInt(value, 10);
@@ -22,20 +22,20 @@ const asPrice = (value) => {
 };
 
 // Escape LIKE wildcards so a search for "50%" matches literally
-const escapeLike = (text) => text.replace(/[\\%_]/g, "\\$&");
+const escapeLike = (text) => text.replace(/[\\%_]/g, '\\$&');
 
 // Sort options accepted via ?sort=...
 const SORTS = {
-  newest: "p.created_at DESC",
-  oldest: "p.created_at ASC",
-  popular: "p.featured DESC, p.created_at DESC",
-  featured: "p.featured DESC, p.created_at DESC",
-  "price-asc": "p.price ASC",
-  "price-low": "p.price ASC",
-  "price-desc": "p.price DESC",
-  "price-high": "p.price DESC",
-  "name-asc": "p.name ASC",
-  "name-desc": "p.name DESC",
+  newest: 'p.created_at DESC',
+  oldest: 'p.created_at ASC',
+  popular: 'p.featured DESC, p.created_at DESC',
+  featured: 'p.featured DESC, p.created_at DESC',
+  'price-asc': 'p.price ASC',
+  'price-low': 'p.price ASC',
+  'price-desc': 'p.price DESC',
+  'price-high': 'p.price DESC',
+  'name-asc': 'p.name ASC',
+  'name-desc': 'p.name DESC',
   discount: `(CASE WHEN p.compare_at_price > p.price
                     THEN (p.compare_at_price - p.price) / p.compare_at_price
                     ELSE 0 END) DESC`,
@@ -43,16 +43,16 @@ const SORTS = {
 
 // Older clients: ?sort=price&order=asc
 const LEGACY_SORT_FIELDS = {
-  created_at: "p.created_at",
-  price: "p.price",
-  name: "p.name",
+  created_at: 'p.created_at',
+  price: 'p.price',
+  name: 'p.name',
 };
 
 function resolveOrderBy(sort, order) {
-  const key = sort.replace(/_/g, "-");
+  const key = sort.replace(/_/g, '-');
   if (Object.hasOwn(SORTS, key)) return SORTS[key];
   if (Object.hasOwn(LEGACY_SORT_FIELDS, sort)) {
-    const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";
+    const direction = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     return `${LEGACY_SORT_FIELDS[sort]} ${direction}`;
   }
   return SORTS.newest;
@@ -77,7 +77,7 @@ function buildProductFilters(q) {
     conditions.push(`p.category_id IN (
       WITH RECURSIVE tree AS (
         SELECT id FROM categories WHERE slug = ${slug}
-        UNION ALL
+        UNION
         SELECT c.id FROM categories c JOIN tree t ON c.parent_id = t.id
       )
       SELECT id FROM tree
@@ -93,22 +93,20 @@ function buildProductFilters(q) {
   for (const term of terms) {
     const like = add(`%${escapeLike(term)}%`);
     conditions.push(
-      `(p.name ILIKE ${like} OR p.description ILIKE ${like} OR p.sku ILIKE ${like})`,
+      `(p.name ILIKE ${like} OR p.description ILIKE ${like} OR p.sku ILIKE ${like})`
     );
   }
 
-  if (q.featured === "true") {
-    conditions.push("p.featured = true");
+  if (q.featured === 'true') {
+    conditions.push('p.featured = true');
   }
 
-  if (q.sale === "true") {
-    conditions.push(
-      "(p.compare_at_price IS NOT NULL AND p.compare_at_price > p.price)",
-    );
+  if (q.sale === 'true') {
+    conditions.push('(p.compare_at_price IS NOT NULL AND p.compare_at_price > p.price)');
   }
 
-  if (q.inStock === "true") {
-    conditions.push("p.stock_quantity > 0");
+  if (q.inStock === 'true') {
+    conditions.push('p.stock_quantity > 0');
   }
 
   const minPrice = asPrice(q.minPrice);
@@ -117,13 +115,13 @@ function buildProductFilters(q) {
   const maxPrice = asPrice(q.maxPrice);
   if (maxPrice !== null) conditions.push(`p.price <= ${add(maxPrice)}`);
 
-  return { where: `WHERE ${conditions.join(" AND ")}`, params };
+  return { where: `WHERE ${conditions.join(' AND ')}`, params };
 }
 
 /* -------------------------------- routes -------------------------------- */
 
 // Get all products with pagination and filters
-router.get("/", async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const page = asPositiveInt(req.query.page, 1);
     const limit = asPositiveInt(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT);
@@ -132,7 +130,7 @@ router.get("/", async (req, res) => {
     const { where, params } = buildProductFilters(req.query);
     const orderBy = resolveOrderBy(
       asString(req.query.sort),
-      asString(req.query.order),
+      asString(req.query.order)
     );
 
     const limitParam = `$${params.length + 1}`;
@@ -148,7 +146,7 @@ router.get("/", async (req, res) => {
          ${where}
          ORDER BY ${orderBy}, p.id
          LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        [...params, limit, offset],
+        [...params, limit, offset]
       ),
     ]);
 
@@ -164,13 +162,13 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get products error:", error);
-    res.status(500).json({ error: "Failed to fetch products" });
+    console.error('Get products error:', error);
+    res.status(500).json({ error: 'Failed to fetch products' });
   }
 });
 
 // Get featured products
-router.get("/featured", async (req, res) => {
+router.get('/featured', async (req, res) => {
   try {
     const limit = asPositiveInt(req.query.limit, 6, 50);
 
@@ -181,18 +179,18 @@ router.get("/featured", async (req, res) => {
        WHERE p.status = 'active' AND p.featured = true
        ORDER BY p.created_at DESC
        LIMIT $1`,
-      [limit],
+      [limit]
     );
 
     res.json({ products: result.rows });
   } catch (error) {
-    console.error("Get featured products error:", error);
-    res.status(500).json({ error: "Failed to fetch featured products" });
+    console.error('Get featured products error:', error);
+    res.status(500).json({ error: 'Failed to fetch featured products' });
   }
 });
 
 // Get single product by slug
-router.get("/:slug", async (req, res) => {
+router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
 
@@ -201,11 +199,11 @@ router.get("/:slug", async (req, res) => {
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.slug = $1 AND p.status = 'active'`,
-      [slug],
+      [slug]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Product not found" });
+      return res.status(404).json({ error: 'Product not found' });
     }
 
     const product = result.rows[0];
@@ -219,7 +217,7 @@ router.get("/:slug", async (req, res) => {
            WHERE p.category_id = $1 AND p.id != $2 AND p.status = 'active'
            ORDER BY p.created_at DESC, p.id
            LIMIT 4`,
-          [product.category_id, product.id],
+          [product.category_id, product.id]
         )
       : { rows: [] };
 
@@ -228,8 +226,8 @@ router.get("/:slug", async (req, res) => {
       relatedProducts: relatedResult.rows,
     });
   } catch (error) {
-    console.error("Get product error:", error);
-    res.status(500).json({ error: "Failed to fetch product" });
+    console.error('Get product error:', error);
+    res.status(500).json({ error: 'Failed to fetch product' });
   }
 });
 
