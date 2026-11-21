@@ -31,6 +31,15 @@ const ORDER_FLOW = [
   "delivered",
 ];
 
+// ?sort= options for the product list
+const PRODUCT_SORTS = {
+  newest: "p.created_at DESC, p.id",
+  name: "p.name ASC, p.id",
+  "price-asc": "p.price ASC, p.id",
+  "price-desc": "p.price DESC, p.id",
+  "stock-asc": "p.stock_quantity ASC, p.name ASC",
+};
+
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -438,8 +447,11 @@ router.get(
     const categoryId = asString(req.query.category);
     if (isUuid(categoryId)) where.push(`p.category_id = ${bind(categoryId)}`);
 
+    // Same meaning as the dashboard: active products that are running low or out
     if (req.query.lowStock === "true") {
-      where.push(`p.stock_quantity <= ${bind(LOW_STOCK_THRESHOLD)}`);
+      where.push(
+        `(p.status = 'active' AND p.stock_quantity <= ${bind(LOW_STOCK_THRESHOLD)})`,
+      );
     }
 
     const search = asString(req.query.search).trim();
@@ -452,7 +464,12 @@ router.get(
 
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    const [count, products] = await Promise.all([
+    const sortKey = asString(req.query.sort);
+    const orderBy = Object.hasOwn(PRODUCT_SORTS, sortKey)
+      ? PRODUCT_SORTS[sortKey]
+      : PRODUCT_SORTS.newest;
+
+    const [count, products, tabCounts] = await Promise.all([
       query(
         `SELECT COUNT(*)::int AS count FROM products p ${whereClause}`,
         params,
@@ -462,15 +479,33 @@ router.get(
          FROM products p
          LEFT JOIN categories c ON p.category_id = c.id
          ${whereClause}
-         ORDER BY p.created_at DESC, p.id
+         ORDER BY ${orderBy}
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, limit, offset],
       ),
+      // Totals for the status tabs (they ignore the current search and filters)
+      query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+                COUNT(*) FILTER (WHERE status = 'draft')::int AS draft,
+                COUNT(*) FILTER (WHERE status = 'archived')::int AS archived,
+                COUNT(*) FILTER (WHERE status = 'active' AND stock_quantity <= $1)::int AS low_stock
+         FROM products`,
+        [LOW_STOCK_THRESHOLD],
+      ),
     ]);
 
+    const t = tabCounts.rows[0];
     res.json({
       products: products.rows,
       pagination: pageMeta(page, limit, count.rows[0].count),
+      counts: {
+        total: t.total,
+        active: t.active,
+        draft: t.draft,
+        archived: t.archived,
+        lowStock: t.low_stock,
+      },
     });
   }),
 );
